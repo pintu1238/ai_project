@@ -1,0 +1,324 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum ProjectStatus {
+  DRAFT
+  UPLOADED
+  QUEUED
+  PROCESSING
+  TRANSCRIBED
+  MOMENTS_READY
+  POSTS_READY
+  REVIEW
+  COMPLETED
+  FAILED
+}
+
+enum MediaProcessingStatus {
+  UPLOADED
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum PostPlatform {
+  INSTAGRAM
+  LINKEDIN
+  X
+}
+
+enum PostStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  SCHEDULED
+  PUBLISHED
+  FAILED
+}
+
+enum ScheduledPostStatus {
+  PENDING
+  PROCESSING
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+  LINKEDIN
+  X
+}
+
+enum ApprovalAction {
+  APPROVED
+  REJECTED
+  REVERTED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  timezone     String   @default("UTC")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships      WorkspaceMembership[]
+  approvalHistory  ApprovalHistory[]
+  publishingLogs   PublishingLog[]
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships   WorkspaceMembership[]
+  projects      Project[]
+  brandKits     BrandKit[]
+  socialAccounts SocialAccount[]
+}
+
+model WorkspaceMembership {
+  id          String        @id @default(cuid())
+  role        WorkspaceRole @default(MEMBER)
+  userId      String
+  workspaceId String
+  createdAt   DateTime      @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+  @@index([workspaceId])
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  title       String
+  description String?
+  status      ProjectStatus @default(DRAFT)
+  workspaceId String
+  mediaAssetId String?      @unique
+  errorMessage String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  workspace  Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  mediaAsset MediaAsset? @relation(fields: [mediaAssetId], references: [id])
+  transcript Transcript?
+  moments    Moment[]
+  posts      Post[]
+
+  @@index([workspaceId])
+  @@index([status])
+}
+
+model MediaAsset {
+  id               String                @id @default(cuid())
+  originalName     String
+  mimeType         String
+  sizeBytes        BigInt
+  storagePath      String
+  durationSec      Float?
+  processingStatus MediaProcessingStatus @default(UPLOADED)
+  errorMessage     String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  project Project?
+}
+
+model Transcript {
+  id        String   @id @default(cuid())
+  projectId String   @unique
+  fullText  String   @db.Text
+  language  String?
+  model     String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project  Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  segments TranscriptSegment[]
+}
+
+model TranscriptSegment {
+  id           String  @id @default(cuid())
+  transcriptId String
+  index        Int
+  startSec     Float
+  endSec       Float
+  text         String  @db.Text
+  speaker      String?
+
+  transcript Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@index([transcriptId])
+}
+
+model Moment {
+  id             String   @id @default(cuid())
+  projectId      String
+  externalId     String
+  startSec       Float
+  endSec         Float
+  transcriptText String   @db.Text
+  title          String
+  topic          String?
+  relevanceScore Float
+  reason         String   @db.Text
+  rank           Int
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  posts   Post[]  @relation("PostMoments")
+
+  @@index([projectId])
+}
+
+model Post {
+  id          String       @id @default(cuid())
+  projectId   String
+  platform    PostPlatform
+  hook        String
+  body        String       @db.Text
+  hashtags    String[]     @default([])
+  callToAction String?
+  status      PostStatus   @default(DRAFT)
+  threadOrder Int?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  moments        Moment[]         @relation("PostMoments")
+  assets         PostAsset[]
+  scheduledPosts ScheduledPost[]
+  approvalHistory ApprovalHistory[]
+
+  @@index([projectId])
+  @@index([status])
+}
+
+model PostAsset {
+  id        String   @id @default(cuid())
+  postId    String
+  kind      String   @default("image")
+  storagePath String
+  mimeType  String   @default("image/png")
+  width     Int?
+  height    Int?
+  template  String?
+  layoutJson Json?
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+model BrandKit {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  name         String
+  primaryColor String   @default("#6366f1")
+  secondaryColor String @default("#0f172a")
+  accentColor  String   @default("#22c55e")
+  fontHeading  String   @default("Inter")
+  fontBody     String   @default("Inter")
+  logoPath     String?
+  templates    Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model SocialAccount {
+  id              String         @id @default(cuid())
+  workspaceId     String
+  platform        SocialPlatform
+  accountName     String?
+  externalId      String?
+  accessTokenEnc  String?        @db.Text
+  refreshTokenEnc String?        @db.Text
+  tokenExpiresAt  DateTime?
+  scopes          String[]       @default([])
+  connected       Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, platform])
+}
+
+model ScheduledPost {
+  id          String              @id @default(cuid())
+  postId      String
+  scheduledAt DateTime
+  timezone    String
+  status      ScheduledPostStatus @default(PENDING)
+  idempotencyKey String           @unique
+  lastError   String?
+  publishedAt DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  post           Post            @relation(fields: [postId], references: [id], onDelete: Cascade)
+  publishingLogs PublishingLog[]
+
+  @@index([scheduledAt])
+  @@index([status])
+}
+
+model ApprovalHistory {
+  id        String         @id @default(cuid())
+  postId    String
+  userId    String
+  action    ApprovalAction
+  note      String?
+  createdAt DateTime       @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+model PublishingLog {
+  id              String   @id @default(cuid())
+  scheduledPostId String
+  userId          String?
+  platform        PostPlatform
+  success         Boolean
+  externalPostId  String?
+  requestPayload  Json?
+  responsePayload Json?
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+
+  scheduledPost ScheduledPost @relation(fields: [scheduledPostId], references: [id], onDelete: Cascade)
+  user          User?         @relation(fields: [userId], references: [id])
+
+  @@index([scheduledPostId])
+}

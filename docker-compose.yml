@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: contentflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: contentflow
+      POSTGRES_PASSWORD: contentflow
+      POSTGRES_DB: contentflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contentflow -d contentflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: contentflow-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Optional: run backend in Docker after local dev setup
+  # backend:
+  #   build: ./backend
+  #   env_file: .env
+  #   ports:
+  #     - "4000:4000"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   volumes:
+  #     - ./backend/storage:/app/storage
+
+volumes:
+  postgres_data:
+  redis_data:
